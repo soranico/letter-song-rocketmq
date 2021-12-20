@@ -45,16 +45,30 @@ public class MappedFile extends ReferenceResource {
     public static final int OS_PAGE_SIZE = 1024 * 4;
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    /**
+     * 虚拟内存映射大小
+     */
     private static final AtomicLong TOTAL_MAPPED_VIRTUAL_MEMORY = new AtomicLong(0);
 
     private static final AtomicInteger TOTAL_MAPPED_FILES = new AtomicInteger(0);
+    /**
+     * 写入的偏移
+     */
     protected final AtomicInteger wrotePosition = new AtomicInteger(0);
+    /**
+     * 提交的偏移
+     */
     protected final AtomicInteger committedPosition = new AtomicInteger(0);
+    /**
+     * 已经刷盘的偏移
+     */
     private final AtomicInteger flushedPosition = new AtomicInteger(0);
     protected int fileSize;
     protected FileChannel fileChannel;
     /**
      * Message will put to here first, and then reput to FileChannel if writeBuffer is not null.
+     * 如果存在直接内存那么消息会首先写入buff
+     * 然后从buff写入channel再进行落盘
      */
     protected ByteBuffer writeBuffer = null;
     protected TransientStorePool transientStorePool = null;
@@ -90,6 +104,9 @@ public class MappedFile extends ReferenceResource {
     public static void clean(final ByteBuffer buffer) {
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0)
             return;
+        /**
+         * 首先通过 attachment() 来反射调用获取引用
+         */
         invoke(invoke(viewed(buffer), "cleaner"), "clean");
     }
 
@@ -152,12 +169,18 @@ public class MappedFile extends ReferenceResource {
         this.fileName = fileName;
         this.fileSize = fileSize;
         this.file = new File(fileName);
+        /**
+         * 文件的偏移量,上个文件的总大小
+         */
         this.fileFromOffset = Long.parseLong(this.file.getName());
         boolean ok = false;
 
         ensureDirOK(this.file.getParent());
 
         try {
+            /**
+             * mmp内存映射此文件
+             */
             this.fileChannel = new RandomAccessFile(this.file, "rw").getChannel();
             this.mappedByteBuffer = this.fileChannel.map(MapMode.READ_WRITE, 0, fileSize);
             TOTAL_MAPPED_VIRTUAL_MEMORY.addAndGet(fileSize);
@@ -427,7 +450,11 @@ public class MappedFile extends ReferenceResource {
                 + " have cleanup, do not do it again.");
             return true;
         }
-
+        /**
+         * 反射释放内存映射的文件
+         * 只能通过反射,内存映射关闭回收只能的 full gc才能自动回收
+         * @see MappedFile#clean(ByteBuffer)
+         */
         clean(this.mappedByteBuffer);
         TOTAL_MAPPED_VIRTUAL_MEMORY.addAndGet(this.fileSize * (-1));
         TOTAL_MAPPED_FILES.decrementAndGet();

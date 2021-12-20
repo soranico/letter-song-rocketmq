@@ -34,11 +34,17 @@ public class MappedFileQueue {
     private static final InternalLogger LOG_ERROR = InternalLoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
 
     private static final int DELETE_FILES_BATCH_MAX = 10;
-
+    /**
+     * commitLog的存储路径
+     */
     private final String storePath;
 
     private final int mappedFileSize;
-
+    /**
+     * 里面存放了每个commitLog的文件
+     * 在进行文件删除的时候会取出每个数据(不包括最后一个,因为是正在操作的)
+     * 进行过期判断
+     */
     private final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<MappedFile>();
 
     private final AllocateMappedFileService allocateMappedFileService;
@@ -337,6 +343,13 @@ public class MappedFileQueue {
         final int deleteFilesInterval,
         final long intervalForcibly,
         final boolean cleanImmediately) {
+        /**
+         *
+         * 已经存在的commitLog文件
+         * 最新的日志就是当前使用的
+         * 所以不需要进行删除的逻辑
+         *
+         */
         Object[] mfs = this.copyMappedFiles(0);
 
         if (null == mfs)
@@ -348,12 +361,25 @@ public class MappedFileQueue {
         if (null != mfs) {
             for (int i = 0; i < mfsLength; i++) {
                 MappedFile mappedFile = (MappedFile) mfs[i];
+                /**
+                 * 文件的最后修改时间 + 过期时间(默认72h)
+                 * 小于现在的时间那么文件需要删除
+                 *
+                 * 磁盘占比达到85以上不管是否过期都需要立即删除
+                 */
                 long liveMaxTimestamp = mappedFile.getLastModifiedTimestamp() + expiredTime;
                 if (System.currentTimeMillis() >= liveMaxTimestamp || cleanImmediately) {
+                    /**
+                     * 对这个文件的map内存映射已经释放了
+                     * 那么就可以删除这个文件
+                     */
                     if (mappedFile.destroy(intervalForcibly)) {
                         files.add(mappedFile);
                         deleteCount++;
 
+                        /**
+                         * 一次最多删除10个文件
+                         */
                         if (files.size() >= DELETE_FILES_BATCH_MAX) {
                             break;
                         }

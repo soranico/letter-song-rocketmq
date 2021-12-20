@@ -59,7 +59,11 @@ public abstract class ReferenceResource {
             return;
 
         synchronized (this) {
-
+            /**
+             * 关闭文件的内存映射
+             * 通过 cleaner方法反射来实现
+             * @see MappedFile#cleanup(long)
+             */
             this.cleanupOver = this.cleanup(value);
         }
     }

@@ -28,6 +28,10 @@ public class Message implements Serializable {
     /** 主题 */
     private String topic;
     private int flag;
+    /**
+     * 消息扩展信息
+     * e.g 消息的延迟级别,自定义的key,Tag
+     */
     private Map<String, String> properties;
     private byte[] body;
     private String transactionId;

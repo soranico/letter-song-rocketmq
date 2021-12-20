@@ -28,44 +28,37 @@ import org.apache.rocketmq.remoting.common.RemotingHelper;
 public class Producer {
     public static void main(String[] args) throws MQClientException, InterruptedException {
 
-        /*
-         * Instantiate with a producer group name.
-         */
-        DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
 
-        /*
-         * Specify name server addresses.
-         * <p/>
-         *
-         * Alternatively, you may specify name server addresses via exporting environmental variable: NAMESRV_ADDR
-         * <pre>
-         * {@code
-         * producer.setNamesrvAddr("name-server1-ip:9876;name-server2-ip:9876");
-         * }
-         * </pre>
-         */
+        DefaultMQProducer producer = new DefaultMQProducer("quick-producer-group");
 
-        /*
-         * Launch the instance.
-         */
+        producer.setNamesrvAddr("127.0.0.1:9876");
+
+        producer.setDefaultTopicQueueNums(4);
+
+        producer.setSendMsgTimeout(3000);
+
+        producer.setCompressMsgBodyOverHowmuch(1024<<2);
+
+        producer.setRetryTimesWhenSendFailed(2);
+        producer.setRetryTimesWhenSendAsyncFailed(2);
+
+        // 发送失败立即尝试另一台broker
+        producer.setRetryAnotherBrokerWhenNotStoreOK(false);
+
+        // 4M
+        producer.setMaxMessageSize(1024<<10<<2);
+
         producer.start();
 
-        for (int i = 0; i < 1000; i++) {
+        String message = "kano-%s";
+        for (int i = 0; i < 5; i++) {
             try {
-
-                /*
-                 * Create a message instance, specifying topic, tag and message body.
-                 */
-                Message msg = new Message("TopicTest" /* Topic */,
-                    "TagA" /* Tag */,
-                    ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET) /* Message body */
+                Message msg = new Message("quickTopic",
+                        "tagA",
+                        String.format(message,i).getBytes(RemotingHelper.DEFAULT_CHARSET)
                 );
 
-                /*
-                 * Call send message to deliver message to one of brokers.
-                 */
                 SendResult sendResult = producer.send(msg);
-
                 System.out.printf("%s%n", sendResult);
             } catch (Exception e) {
                 e.printStackTrace();

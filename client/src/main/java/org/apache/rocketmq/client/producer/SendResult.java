@@ -23,8 +23,14 @@ public class SendResult {
     private SendStatus sendStatus;
     private String msgId;
     private MessageQueue messageQueue;
+    /**
+     * 消息在队列中的偏移量
+     */
     private long queueOffset;
     private String transactionId;
+    /**
+     * 消息在commitLog的偏移量
+     */
     private String offsetMsgId;
     private String regionId;
     private boolean traceOn = true;

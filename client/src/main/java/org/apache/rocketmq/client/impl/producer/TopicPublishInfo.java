@@ -67,9 +67,20 @@ public class TopicPublishInfo {
     }
 
     public MessageQueue selectOneMessageQueue(final String lastBrokerName) {
+        /**
+         * 轮训选择,第一次不一定是从0开始
+         * 第一次是个随机数,后续就是一次递增了
+         * e.g 第一次计算出队列1 那么下次就是从队列2
+         * @see TopicPublishInfo#selectOneMessageQueue()
+         */
         if (lastBrokerName == null) {
             return selectOneMessageQueue();
-        } else {
+        }
+        /**
+         * 进入这里说明存在容错策略
+         * 上个broker发送失败了找其他broker上的队列进行重试
+         */
+        else {
             for (int i = 0; i < this.messageQueueList.size(); i++) {
                 int index = this.sendWhichQueue.incrementAndGet();
                 int pos = Math.abs(index) % this.messageQueueList.size();

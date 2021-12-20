@@ -417,7 +417,8 @@ public class MQClientAPIImpl {
         throw new MQBrokerException(response.getCode(), response.getRemark(), addr);
 
     }
-
+    
+    
     public SendResult sendMessage(
         final String addr,
         final String brokerName,
@@ -448,6 +449,9 @@ public class MQClientAPIImpl {
         long beginStartTime = System.currentTimeMillis();
         RemotingCommand request = null;
         String msgType = msg.getProperty(MessageConst.PROPERTY_MESSAGE_TYPE);
+        /**
+         *
+         */
         boolean isReply = msgType != null && msgType.equals(MixAll.REPLY_MESSAGE_FLAG);
         if (isReply) {
             if (sendSmartMsg) {
@@ -465,7 +469,9 @@ public class MQClientAPIImpl {
             }
         }
         request.setBody(msg.getBody());
-
+        /**
+         * 根据不同模式发送 oneWay情况只需要请求不需要服务端的响应
+         */
         switch (communicationMode) {
             case ONEWAY:
                 this.remotingClient.invokeOneway(addr, request, timeoutMillis);
@@ -476,6 +482,9 @@ public class MQClientAPIImpl {
                 if (timeoutMillis < costTimeAsync) {
                     throw new RemotingTooMuchRequestException("sendMessage call timeout");
                 }
+                /**
+                 * @see MQClientAPIImpl#sendMessageAsync(String, String, Message, long, RemotingCommand, SendCallback, TopicPublishInfo, MQClientInstance, int, AtomicInteger, SendMessageContext, DefaultMQProducerImpl) 异步请求
+                 */
                 this.sendMessageAsync(addr, brokerName, msg, timeoutMillis - costTimeAsync, request, sendCallback, topicPublishInfo, instance,
                     retryTimesWhenSendFailed, times, context, producer);
                 return null;
@@ -484,6 +493,9 @@ public class MQClientAPIImpl {
                 if (timeoutMillis < costTimeSync) {
                     throw new RemotingTooMuchRequestException("sendMessage call timeout");
                 }
+                /**
+                 * @see MQClientAPIImpl#sendMessageSync(String, String, Message, long, RemotingCommand) 
+                 */
                 return this.sendMessageSync(addr, brokerName, msg, timeoutMillis - costTimeSync, request);
             default:
                 assert false;
@@ -500,6 +512,9 @@ public class MQClientAPIImpl {
         final long timeoutMillis,
         final RemotingCommand request
     ) throws RemotingException, MQBrokerException, InterruptedException {
+        /**
+         * @see NettyRemotingClient#invokeSync(String, RemotingCommand, long) 
+         */
         RemotingCommand response = this.remotingClient.invokeSync(addr, request, timeoutMillis);
         assert response != null;
         return this.processSendResponse(brokerName, msg, response,addr);
@@ -520,6 +535,10 @@ public class MQClientAPIImpl {
         final DefaultMQProducerImpl producer
     ) throws InterruptedException, RemotingException {
         final long beginStartTime = System.currentTimeMillis();
+        /**
+         * 调用netty客户端进行数据发送
+         * @see NettyRemotingClient#invokeAsync(String, RemotingCommand, long, InvokeCallback)
+         */
         this.remotingClient.invokeAsync(addr, request, timeoutMillis, new InvokeCallback() {
             @Override
             public void operationComplete(ResponseFuture responseFuture) {

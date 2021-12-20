@@ -86,7 +86,11 @@ public class MQFaultStrategy {
 
             return tpInfo.selectOneMessageQueue();
         }
-
+        /**
+         * 选择发送的队列,这个是和线程绑定的每个线程先生成一个随机数选择队列
+         * 后续按照轮训策略进行队列选择
+         * @see TopicPublishInfo#selectOneMessageQueue(String)
+         */
         return tpInfo.selectOneMessageQueue(lastBrokerName);
     }
 
