@@ -154,6 +154,11 @@ public abstract class NettyRemotingAbstract {
         final RemotingCommand cmd = msg;
         if (cmd != null) {
             switch (cmd.getType()) {
+                /**
+                 * 注册请求,处理具体的注册请求
+                 * 此时会提交到线程池去处理业务请求
+                 * @see org.apache.rocketmq.remoting.netty.NettyRemotingServer.NettyServerHandler#processRequestCommand(ChannelHandlerContext, RemotingCommand) 
+                 */
                 case REQUEST_COMMAND:
                     processRequestCommand(ctx, cmd);
                     break;
@@ -190,6 +195,11 @@ public abstract class NettyRemotingAbstract {
      * @param cmd request command.
      */
     public void processRequestCommand(final ChannelHandlerContext ctx, final RemotingCommand cmd) {
+        /**
+         * 找到处理的线程池,没有使用默认的
+         * 这个默认的是配置的时候创建的
+         * @see org.apache.rocketmq.namesrv.NamesrvController#initialize()
+         */
         final Pair<NettyRequestProcessor, ExecutorService> matched = this.processorTable.get(cmd.getCode());
         final Pair<NettyRequestProcessor, ExecutorService> pair = null == matched ? this.defaultRequestProcessor : matched;
         final int opaque = cmd.getOpaque();
@@ -220,12 +230,21 @@ public abstract class NettyRemotingAbstract {
                                 }
                             }
                         };
+                        /**
+                         * 默认的
+                         */
                         if (pair.getObject1() instanceof AsyncNettyRequestProcessor) {
                             AsyncNettyRequestProcessor processor = (AsyncNettyRequestProcessor)pair.getObject1();
+                            /**
+                             * 调用具体的processor处理请求,内部调用的也是同步方法去执行
+                             * @see org.apache.rocketmq.namesrv.processor.DefaultRequestProcessor#asyncProcessRequest(ChannelHandlerContext, RemotingCommand, RemotingResponseCallback)
+                             */
                             processor.asyncProcessRequest(ctx, cmd, callback);
-                        } else {
+                        }
+                        else {
                             NettyRequestProcessor processor = pair.getObject1();
                             RemotingCommand response = processor.processRequest(ctx, cmd);
+
                             callback.callback(response);
                         }
                     } catch (Throwable e) {
@@ -242,6 +261,9 @@ public abstract class NettyRemotingAbstract {
                 }
             };
 
+            /**
+             * TODO 请求拒绝
+             */
             if (pair.getObject1().rejectRequest()) {
                 final RemotingCommand response = RemotingCommand.createResponseCommand(RemotingSysResponseCode.SYSTEM_BUSY,
                     "[REJECTREQUEST]system busy, start flow control for a while");
@@ -251,6 +273,9 @@ public abstract class NettyRemotingAbstract {
             }
 
             try {
+                /**
+                 * 封装task提交线程池执行
+                 */
                 final RequestTask requestTask = new RequestTask(run, ctx.channel(), cmd);
                 pair.getObject2().submit(requestTask);
             } catch (RejectedExecutionException e) {
@@ -597,8 +622,14 @@ public abstract class NettyRemotingAbstract {
         public void run() {
             log.info(this.getServiceName() + " service started");
 
+            /**
+             * 对于NameSrv 此时的监听者
+             * @see org.apache.rocketmq.namesrv.routeinfo.BrokerHousekeepingService#BrokerHousekeepingService(org.apache.rocketmq.namesrv.NamesrvController)
+             */
             final ChannelEventListener listener = NettyRemotingAbstract.this.getChannelEventListener();
-
+            /**
+             * 服务没有停止
+             */
             while (!this.isStopped()) {
                 try {
                     NettyEvent event = this.eventQueue.poll(3000, TimeUnit.MILLISECONDS);

@@ -16,10 +16,8 @@
  */
 package org.apache.rocketmq.namesrv;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+
 import org.apache.rocketmq.common.Configuration;
 import org.apache.rocketmq.common.ThreadFactoryImpl;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -64,6 +62,10 @@ public class NamesrvController {
         this.namesrvConfig = namesrvConfig;
         this.nettyServerConfig = nettyServerConfig;
         this.kvConfigManager = new KVConfigManager(this);
+        /**
+         * 创建存放 topic broker cluster等信息的本地缓存
+         * 本质就是一个个hashmap
+         */
         this.routeInfoManager = new RouteInfoManager();
         this.brokerHousekeepingService = new BrokerHousekeepingService(this);
         this.configuration = new Configuration(
@@ -76,14 +78,32 @@ public class NamesrvController {
     public boolean initialize() {
 
         this.kvConfigManager.load();
-
+        /**
+         * 初始化Netty服务的配置,线程池 ssl 等
+         * 此时并没有启动服务
+         * @see BrokerHousekeepingService
+         */
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
 
+        /**
+         * 处理请求的线程池,I/O线程接受数据将请求封装为task
+         * 提交到业务线程池执行
+         */
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
 
+        /**
+         * 注册处理器,主要处理通信之间的请求
+         * @see DefaultRequestProcessor
+         */
         this.registerProcessor();
-
+        /**
+         * 以任务创建的时间为准,每隔10s运行一次,如果一次任务超过10s 那么运行完后下次任务会直接执行
+         * @see ScheduledThreadPoolExecutor.ScheduledFutureTask#setNextRunTime()
+         *
+         * 扫描非活跃状态的broker,并非实时的
+         * @see RouteInfoManager#scanNotActiveBroker()
+         */
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -153,6 +173,19 @@ public class NamesrvController {
     }
 
     public void start() throws Exception {
+        /**
+         * 启动服务
+         * @see NettyRemotingServer#start()
+         *
+         * 默认的心跳超时是120s 这个是Netty的channel超时时间
+         * 也就是120没有信息交互,那么这个channel是超时的
+         *
+         * 连接建立的时候
+         * @see org.apache.rocketmq.remoting.netty.NettyRemotingServer.NettyConnectManageHandler
+         *
+         * @see org.apache.rocketmq.remoting.netty.NettyRemotingServer.NettyServerHandler
+         *
+         */
         this.remotingServer.start();
 
         if (this.fileWatchService != null) {

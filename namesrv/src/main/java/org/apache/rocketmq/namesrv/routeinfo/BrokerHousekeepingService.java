@@ -47,6 +47,10 @@ public class BrokerHousekeepingService implements ChannelEventListener {
 
     @Override
     public void onChannelIdle(String remoteAddr, Channel channel) {
+        /**
+         * 连接超时,默认120s内channel没有进行读写
+         * @see RouteInfoManager#onChannelDestroy(String, Channel)
+         */
         this.namesrvController.getRouteInfoManager().onChannelDestroy(remoteAddr, channel);
     }
 }

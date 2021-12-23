@@ -52,9 +52,16 @@ public class NamesrvStartup {
     }
 
     public static NamesrvController main0(String[] args) {
-
+        System.setProperty(MixAll.ROCKETMQ_HOME_PROPERTY,"/Users/kano/Desktop/program/rocketmq/rocketmq-all-4.9.0-bin-release");
         try {
+            /**
+             * 创建NameSrvController 里面封装了
+             * netty的配置以及各种 topic broker 的本地缓存配置
+             */
             NamesrvController controller = createNamesrvController(args);
+            /**
+             * 启动Netty服务
+             */
             start(controller);
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
             log.info(tip);
@@ -80,6 +87,9 @@ public class NamesrvStartup {
         }
 
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        /**
+         * Netty服务端的配置参数
+         */
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
         nettyServerConfig.setListenPort(9876);
         if (commandLine.hasOption('c')) {
@@ -123,6 +133,9 @@ public class NamesrvStartup {
         MixAll.printObjectProperties(log, namesrvConfig);
         MixAll.printObjectProperties(log, nettyServerConfig);
 
+        /**
+         * 创建NameSrv
+         */
         final NamesrvController controller = new NamesrvController(namesrvConfig, nettyServerConfig);
 
         // remember all configs to prevent discard
@@ -136,13 +149,21 @@ public class NamesrvStartup {
         if (null == controller) {
             throw new IllegalArgumentException("NamesrvController is null");
         }
-
+        /**
+         * 初始化方法
+         * @see NamesrvController#initialize()
+         * 1. 启动通信的Netty服务
+         *
+         */
         boolean initResult = controller.initialize();
         if (!initResult) {
             controller.shutdown();
             System.exit(-3);
         }
-
+        /**
+         * 注册jvm进程退出方法,正常退出释放使用的资源
+         * @see NamesrvController#shutdown()
+         */
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {
@@ -150,7 +171,10 @@ public class NamesrvStartup {
                 return null;
             }
         }));
-
+        /**
+         * 启动Netty 服务进行监听
+         * @see NamesrvController#start()
+         */
         controller.start();
 
         return controller;

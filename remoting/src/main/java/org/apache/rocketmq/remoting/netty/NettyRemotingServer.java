@@ -98,6 +98,11 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         super(nettyServerConfig.getServerOnewaySemaphoreValue(), nettyServerConfig.getServerAsyncSemaphoreValue());
         this.serverBootstrap = new ServerBootstrap();
         this.nettyServerConfig = nettyServerConfig;
+
+        /**
+         * 当channel建立的时候发布事件
+         * @see org.apache.rocketmq.namesrv.routeinfo.BrokerHousekeepingService
+         */
         this.channelEventListener = channelEventListener;
 
         int publicThreadNums = nettyServerConfig.getServerCallbackExecutorThreads();
@@ -114,6 +119,11 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             }
         });
 
+        /**
+         * 创建Netty用于通信的线程池
+         * 默认 boss 1 接受socket 请求连接
+         * io 线程默认 3个
+         */
         if (useEpoll()) {
             this.eventLoopGroupBoss = new EpollEventLoopGroup(1, new ThreadFactory() {
                 private AtomicInteger threadIndex = new AtomicInteger(0);
@@ -153,7 +163,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                 }
             });
         }
-
+        /**
+         * TODO SSL配置
+         */
         loadSslContext();
     }
 
@@ -417,6 +429,10 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, RemotingCommand msg) throws Exception {
+            /**
+             * 处理请求
+             * @see NettyServerHandler#processMessageReceived(ChannelHandlerContext, RemotingCommand) 
+             */
             processMessageReceived(ctx, msg);
         }
     }
@@ -443,6 +459,13 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             log.info("NETTY SERVER PIPELINE: channelActive, the channel[{}]", remoteAddress);
             super.channelActive(ctx);
 
+            /**
+             * 发布连接建立事件,就是往阻塞队列中put,消费者会读取数据进行处理
+             * @see org.apache.rocketmq.remoting.netty.NettyRemotingAbstract.NettyEventExecutor#putNettyEvent(NettyEvent)
+             *
+             * NameSrv没有做任何操作
+             *
+             */
             if (NettyRemotingServer.this.channelEventListener != null) {
                 NettyRemotingServer.this.putNettyEvent(new NettyEvent(NettyEventType.CONNECT, remoteAddress, ctx.channel()));
             }
@@ -467,6 +490,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                     final String remoteAddress = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
                     log.warn("NETTY SERVER PIPELINE: IDLE exception [{}]", remoteAddress);
                     RemotingUtil.closeChannel(ctx.channel());
+                    /**
+                     * @see org.apache.rocketmq.namesrv.routeinfo.BrokerHousekeepingService#onChannelIdle(java.lang.String, io.netty.channel.Channel)
+                     */
                     if (NettyRemotingServer.this.channelEventListener != null) {
                         NettyRemotingServer.this
                             .putNettyEvent(new NettyEvent(NettyEventType.IDLE, remoteAddress, ctx.channel()));

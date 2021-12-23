@@ -43,14 +43,19 @@ public class ClientConfig {
 
     /**
      * Pulling topic information interval from the named server
+     * 从 nameServ 拉取 topic 信息的时间间隔
      */
     private int pollNameServerInterval = 1000 * 30;
     /**
      * Heartbeat interval in microseconds with message broker
+     * 维护和broker之间通信的心跳
      */
     private int heartbeatBrokerInterval = 1000 * 30;
     /**
      * Offset persistent interval for consumer
+     * 持久化当前消费组的消费进度到broker的频率
+     * 如果消费者消费完要等这个时间后才会持久化消费的queue的offset
+     * 到broker,这个值越小月安全但网络开销越大
      */
     private int persistConsumerOffsetInterval = 1000 * 5;
     private long pullTimeDelayMillsWhenException = 1000;
@@ -92,6 +97,10 @@ public class ClientConfig {
         this.instanceName = instanceName;
     }
 
+    /**
+     * 一个client只能连接一个nameServ
+     * 因此 进程+纳秒 防止client错乱
+     */
     public void changeInstanceNameToPID() {
         if (this.instanceName.equals("DEFAULT")) {
             this.instanceName = UtilAll.getPid() + "#" + System.nanoTime();

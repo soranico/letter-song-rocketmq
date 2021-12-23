@@ -48,6 +48,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_ENABLE;
 
+/**
+ *
+ * 启动参数,broker启动配置文件
+ * -c /Users/kano/Desktop/program/rocketmq/rocketmq-all-4.9.0-bin-release/conf/broker.conf
+ *
+ */
 public class BrokerStartup {
     public static Properties properties = null;
     public static CommandLine commandLine = null;
@@ -61,6 +67,10 @@ public class BrokerStartup {
     public static BrokerController start(BrokerController controller) {
         try {
 
+
+            /**
+             * @see BrokerController#start()
+             */
             controller.start();
 
             String tip = "The broker[" + controller.getBrokerConfig().getBrokerName() + ", "
@@ -88,6 +98,9 @@ public class BrokerStartup {
     }
 
     public static BrokerController createBrokerController(String[] args) {
+
+        System.setProperty(MixAll.ROCKETMQ_HOME_PROPERTY,"/Users/kano/Desktop/program/rocketmq/rocketmq-all-4.9.0-bin-release");
+
         System.setProperty(RemotingCommand.REMOTING_VERSION_KEY, Integer.toString(MQVersion.CURRENT_VERSION));
 
         if (null == System.getProperty(NettySystemConfig.COM_ROCKETMQ_REMOTING_SOCKET_SNDBUF_SIZE)) {
@@ -108,14 +121,29 @@ public class BrokerStartup {
             }
 
             final BrokerConfig brokerConfig = new BrokerConfig();
+            /**
+             * Netty服务端接受消费者和生产者的请求
+             */
             final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+            /**
+             * 客户端负责和NameSrv的连接以及心跳的维持
+             */
             final NettyClientConfig nettyClientConfig = new NettyClientConfig();
 
             nettyClientConfig.setUseTLS(Boolean.parseBoolean(System.getProperty(TLS_ENABLE,
                 String.valueOf(TlsSystemConfig.tlsMode == TlsMode.ENFORCING))));
+//            nettyServerConfig.setListenPort(10911);
+
+            /**
+             *
+             */
             nettyServerConfig.setListenPort(10911);
             final MessageStoreConfig messageStoreConfig = new MessageStoreConfig();
 
+            /**
+             * 如果是从节点配置,修改最大的允许消息缓存内存
+             * TODO
+             */
             if (BrokerRole.SLAVE == messageStoreConfig.getBrokerRole()) {
                 int ratio = messageStoreConfig.getAccessMessageInMemoryMaxRatio() - 10;
                 messageStoreConfig.setAccessMessageInMemoryMaxRatio(ratio);
@@ -135,6 +163,9 @@ public class BrokerStartup {
                     MixAll.properties2Object(properties, nettyClientConfig);
                     MixAll.properties2Object(properties, messageStoreConfig);
 
+                    // TODO 从配置文件中设置监听端口
+//                    nettyServerConfig.setListenPort(Integer.parseInt(properties.get("listenPort").toString()));
+
                     BrokerPathConfigHelper.setBrokerConfigPath(file);
                     in.close();
                 }
@@ -147,6 +178,10 @@ public class BrokerStartup {
                 System.exit(-2);
             }
 
+            /**
+             * 连接的NameSrv地址,如果存在多个地址
+             * 需要校验每个地址的可用性
+             */
             String namesrvAddr = brokerConfig.getNamesrvAddr();
             if (null != namesrvAddr) {
                 try {
@@ -177,11 +212,17 @@ public class BrokerStartup {
                 default:
                     break;
             }
-
+            /**
+             * 类型于zk的自动选举
+             * 如果master故障,选取slave作为新的master
+             * TODO
+             */
             if (messageStoreConfig.isEnableDLegerCommitLog()) {
                 brokerConfig.setBrokerId(-1);
             }
-
+            /**
+             * TODO 高可用监听端口
+             */
             messageStoreConfig.setHaListenPort(nettyServerConfig.getListenPort() + 1);
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             JoranConfigurator configurator = new JoranConfigurator();
@@ -218,7 +259,9 @@ public class BrokerStartup {
                 messageStoreConfig);
             // remember all configs to prevent discard
             controller.getConfiguration().registerConfig(properties);
-
+            /**
+             * 进行初始化操作
+             */
             boolean initResult = controller.initialize();
             if (!initResult) {
                 controller.shutdown();

@@ -165,6 +165,13 @@ public class MappedFileQueue {
                 }
 
                 try {
+                    /**
+                     *
+                     * commitLog目录下的每个文件是消息存储的具体位置
+                     * 默认过期时间是72小时,因为消息不一定写完就会被消费完
+                     * 因此启动的时候需要对每个文件建立mmp映射
+                     *
+                     */
                     MappedFile mappedFile = new MappedFile(file.getPath(), mappedFileSize);
 
                     mappedFile.setWrotePosition(this.mappedFileSize);

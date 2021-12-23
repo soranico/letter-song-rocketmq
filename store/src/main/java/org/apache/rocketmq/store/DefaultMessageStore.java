@@ -127,16 +127,37 @@ public class DefaultMessageStore implements MessageStore {
         this.allocateMappedFileService = new AllocateMappedFileService(this);
         if (messageStoreConfig.isEnableDLegerCommitLog()) {
             this.commitLog = new DLedgerCommitLog(this);
-        } else {
+        }
+        /**
+         * 操作commitLog,控制消息的落盘等操作
+         * @see CommitLog#CommitLog(DefaultMessageStore)
+         * 里面有 MappedFileQueue 存放的是每个 文件的集合
+         */
+        else {
             this.commitLog = new CommitLog(this);
         }
+        /**
+         * 每个topic下的每个队列的映射
+         */
         this.consumeQueueTable = new ConcurrentHashMap<>(32);
 
+        /**
+         * 刷新数据到队列中的服务,默认2 page 刷出
+         * @see FlushConsumeQueueService
+         */
         this.flushConsumeQueueService = new FlushConsumeQueueService();
+        /**
+         * commitLog 的清除服务
+         * @see CleanCommitLogService
+         */
         this.cleanCommitLogService = new CleanCommitLogService();
         this.cleanConsumeQueueService = new CleanConsumeQueueService();
         this.storeStatsService = new StoreStatsService();
         this.indexService = new IndexService(this);
+        /**
+         * 没有启用自动选举
+         * @see HAService
+         */
         if (!messageStoreConfig.isEnableDLegerCommitLog()) {
             this.haService = new HAService(this);
         } else {
@@ -152,6 +173,12 @@ public class DefaultMessageStore implements MessageStore {
             this.transientStorePool.init();
         }
 
+        /**
+         *
+         * TODO
+         * @see AllocateMappedFileService#run()
+         *
+         */
         this.allocateMappedFileService.start();
 
         this.indexService.start();
@@ -162,6 +189,9 @@ public class DefaultMessageStore implements MessageStore {
 
         File file = new File(StorePathConfigHelper.getLockFile(messageStoreConfig.getStorePathRootDir()));
         MappedFile.ensureDirOK(file.getParent());
+        /**
+         * store路径下的 lock文件
+         */
         lockFile = new RandomAccessFile(file, "rw");
     }
 
@@ -190,6 +220,10 @@ public class DefaultMessageStore implements MessageStore {
             }
 
             // load Commit Log
+            /**
+             * 加载CommitLog
+             * @see CommitLog#load()
+             */
             result = result && this.commitLog.load();
 
             // load Consume Queue
@@ -221,7 +255,10 @@ public class DefaultMessageStore implements MessageStore {
      * @throws Exception
      */
     public void start() throws Exception {
-
+        /**
+         * 获取文件的独占锁,对于同个存储路径下的lock文件
+         * 只能有一个进程可以获取到文件锁
+         */
         lock = lockFile.getChannel().tryLock(0, 1, false);
         if (lock == null || lock.isShared() || !lock.isValid()) {
             throw new RuntimeException("Lock failed,MQ already started");
@@ -235,6 +272,10 @@ public class DefaultMessageStore implements MessageStore {
              * 2. DLedger committedPos may be missing, so the maxPhysicalPosInLogicQueue maybe bigger that maxOffset returned by DLedgerCommitLog, just let it go;
              * 3. Calculate the reput offset according to the consume queue;
              * 4. Make sure the fall-behind messages to be dispatched before starting the commitlog, especially when the broker role are automatically changed.
+             */
+            /**
+             * 获取最小的偏移量
+             * @see CommitLog#getMinOffset()
              */
             long maxPhysicalPosInLogicQueue = commitLog.getMinOffset();
             for (ConcurrentMap<Integer, ConsumeQueue> maps : this.consumeQueueTable.values()) {

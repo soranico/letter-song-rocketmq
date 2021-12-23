@@ -16,8 +16,10 @@
  */
 package org.apache.rocketmq.namesrv.processor;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import java.io.UnsupportedEncodingException;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.rocketmq.common.DataVersion;
@@ -89,6 +91,10 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
             case RequestCode.QUERY_DATA_VERSION:
                 return queryBrokerTopicConfig(ctx, request);
             case RequestCode.REGISTER_BROKER:
+                /**
+                 * 注册broker,版本大于3.0.11
+                 * @see DefaultRequestProcessor#registerBrokerWithFilterServer(ChannelHandlerContext, RemotingCommand) 
+                 */
                 Version brokerVersion = MQVersion.value2Version(request.getVersion());
                 if (brokerVersion.ordinal() >= MQVersion.Version.V3_0_11.ordinal()) {
                     return this.registerBrokerWithFilterServer(ctx, request);
@@ -211,6 +217,9 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
 
         RegisterBrokerBody registerBrokerBody = new RegisterBrokerBody();
 
+        /**
+         * 解码注册消息体
+         */
         if (request.getBody() != null) {
             try {
                 registerBrokerBody = RegisterBrokerBody.decode(request.getBody(), requestHeader.isCompressed());
@@ -222,6 +231,11 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
             registerBrokerBody.getTopicConfigSerializeWrapper().getDataVersion().setTimestamp(0);
         }
 
+        /**
+         * 注册到 NameSrv 的本地缓存中
+         * 本质就是一个HashMap
+         * @see org.apache.rocketmq.namesrv.routeinfo.RouteInfoManager#registerBroker(String, String, String, long, String, TopicConfigSerializeWrapper, List, Channel) 
+         */
         RegisterBrokerResult result = this.namesrvController.getRouteInfoManager().registerBroker(
             requestHeader.getClusterName(),
             requestHeader.getBrokerAddr(),

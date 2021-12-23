@@ -72,16 +72,29 @@ public class CommitLog {
     protected final PutMessageLock putMessageLock;
 
     public CommitLog(final DefaultMessageStore defaultMessageStore) {
+        /**
+         * 每个物理文件的存放集合,默认每个物理文件的大小是1G
+         * @see MappedFileQueue#MappedFileQueue(String, int, AllocateMappedFileService)
+         */
         this.mappedFileQueue = new MappedFileQueue(defaultMessageStore.getMessageStoreConfig().getStorePathCommitLog(),
             defaultMessageStore.getMessageStoreConfig().getMappedFileSizeCommitLog(), defaultMessageStore.getAllocateMappedFileService());
         this.defaultMessageStore = defaultMessageStore;
-
+        /**
+         * TODO 同步刷盘
+         */
         if (FlushDiskType.SYNC_FLUSH == defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
             this.flushCommitLogService = new GroupCommitService();
-        } else {
+        }
+        /**
+         * 异步刷盘,双主双从异步刷盘,本质就是一个Runnable
+         * @see FlushRealTimeService#run()
+         */
+        else {
             this.flushCommitLogService = new FlushRealTimeService();
         }
-
+        /**
+         * @see CommitRealTimeService#run()
+         */
         this.commitLogService = new CommitRealTimeService();
 
         this.appendMessageCallback = new DefaultAppendMessageCallback(defaultMessageStore.getMessageStoreConfig().getMaxMessageSize());
@@ -91,11 +104,19 @@ public class CommitLog {
                 return new MessageExtBatchEncoder(defaultMessageStore.getMessageStoreConfig().getMaxMessageSize());
             }
         };
+        /**
+         * 存放消息是使用lock 还是spin
+         * 默认自旋,可能导致cpu占比过高
+         */
         this.putMessageLock = defaultMessageStore.getMessageStoreConfig().isUseReentrantLockWhenPutMessage() ? new PutMessageReentrantLock() : new PutMessageSpinLock();
 
     }
 
     public boolean load() {
+        /**
+         * 加载已经存在的每个消息存放文件
+         * @see MappedFileQueue#load()
+         */
         boolean result = this.mappedFileQueue.load();
         log.info("load commit log " + (result ? "OK" : "Failed"));
         return result;

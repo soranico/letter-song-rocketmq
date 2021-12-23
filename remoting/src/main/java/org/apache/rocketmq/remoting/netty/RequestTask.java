@@ -77,6 +77,7 @@ public class RequestTask implements Runnable {
     @Override
     public void run() {
         if (!this.stopRun)
+            System.out.println("time = "+System.currentTimeMillis());
             this.runnable.run();
     }
 
