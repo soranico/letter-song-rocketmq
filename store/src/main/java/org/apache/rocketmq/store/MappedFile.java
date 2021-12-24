@@ -250,7 +250,10 @@ public class MappedFile extends ReferenceResource {
 
     public boolean appendMessage(final byte[] data) {
         int currentPos = this.wrotePosition.get();
-
+        /**
+         * 文件剩余大小可以写入这些数据
+         * 直接用mmp写出
+         */
         if ((currentPos + data.length) <= this.fileSize) {
             try {
                 this.fileChannel.position(currentPos);
@@ -422,12 +425,27 @@ public class MappedFile extends ReferenceResource {
     }
 
     public SelectMappedBufferResult selectMappedBuffer(int pos) {
+        /**
+         * 当前文件可以读取的偏移量
+         * @see MappedFile#getReadPosition()
+         */
         int readPosition = getReadPosition();
         if (pos < readPosition && pos >= 0) {
+            /**
+             * 文件还在被引用,说明没有被删除
+             */
             if (this.hold()) {
                 ByteBuffer byteBuffer = this.mappedByteBuffer.slice();
                 byteBuffer.position(pos);
+                /**
+                 * 从指定偏移量到可读偏移量
+                 */
                 int size = readPosition - pos;
+                /**
+                 * 从 pos -limit 这段内存共享
+                 * 如果 mappedByteBuffer 这段内存数据修改的话
+                 * 对于 byteBufferNew 也是可以看见的
+                 */
                 ByteBuffer byteBufferNew = byteBuffer.slice();
                 byteBufferNew.limit(size);
                 return new SelectMappedBufferResult(this.fileFromOffset + pos, byteBufferNew, size, this);
@@ -501,6 +519,11 @@ public class MappedFile extends ReferenceResource {
      * @return The max position which have valid data
      */
     public int getReadPosition() {
+        /**
+         * 存在直接缓存的话读取缓存中的数据
+         * 因为使用直接缓存,消息会先写入到缓存中再写入到 mmp
+         * 否则直接读取mmp的
+         */
         return this.writeBuffer == null ? this.wrotePosition.get() : this.committedPosition.get();
     }
 

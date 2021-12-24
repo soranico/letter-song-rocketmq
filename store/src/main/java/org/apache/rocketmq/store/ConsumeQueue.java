@@ -32,7 +32,9 @@ public class ConsumeQueue {
     private static final InternalLogger LOG_ERROR = InternalLoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
 
     private final DefaultMessageStore defaultMessageStore;
-
+    /**
+     * 消息队列的映射
+     */
     private final MappedFileQueue mappedFileQueue;
     private final String topic;
     private final int queueId;
@@ -379,8 +381,14 @@ public class ConsumeQueue {
     public void putMessagePositionInfoWrapper(DispatchRequest request) {
         final int maxRetries = 30;
         boolean canWrite = this.defaultMessageStore.getRunningFlags().isCQWriteable();
+        /**
+         * 如果文件可写并且没有达到最大重试次数
+         */
         for (int i = 0; i < maxRetries && canWrite; i++) {
             long tagsCode = request.getTagsCode();
+            /**
+             * 默认false
+             */
             if (isExtWriteEnable()) {
                 ConsumeQueueExt.CqExtUnit cqExtUnit = new ConsumeQueueExt.CqExtUnit();
                 cqExtUnit.setFilterBitMap(request.getBitMap());
@@ -395,9 +403,16 @@ public class ConsumeQueue {
                         topic, queueId, request.getCommitLogOffset());
                 }
             }
+            /**
+             * 通过 mmp 将数据写到 consumequeue文件中
+             * @see ConsumeQueue#putMessagePositionInfo(long, int, long, long) 
+             */
             boolean result = this.putMessagePositionInfo(request.getCommitLogOffset(),
                 request.getMsgSize(), tagsCode, request.getConsumeQueueOffset());
             if (result) {
+                /**
+                 * 如果是从节点,那么更新消息存储的时间
+                 */
                 if (this.defaultMessageStore.getMessageStoreConfig().getBrokerRole() == BrokerRole.SLAVE ||
                     this.defaultMessageStore.getMessageStoreConfig().isEnableDLegerCommitLog()) {
                     this.defaultMessageStore.getStoreCheckpoint().setPhysicMsgTimestamp(request.getStoreTimestamp());
@@ -435,9 +450,15 @@ public class ConsumeQueue {
         this.byteBufferIndex.putLong(offset);
         this.byteBufferIndex.putInt(size);
         this.byteBufferIndex.putLong(tagsCode);
-
+        /**
+         * 队列的偏移量 * 20
+         */
         final long expectLogicOffset = cqOffset * CQ_STORE_UNIT_SIZE;
 
+        /**
+         * 当前使用的文件,如果文件已经写满
+         * 那么重新创建一个新的文件返回
+         */
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(expectLogicOffset);
         if (mappedFile != null) {
 
@@ -451,6 +472,9 @@ public class ConsumeQueue {
             }
 
             if (cqOffset != 0) {
+                /**
+                 * 当前文件的偏移量
+                 */
                 long currentLogicOffset = mappedFile.getWrotePosition() + mappedFile.getFileFromOffset();
 
                 if (expectLogicOffset < currentLogicOffset) {
@@ -470,6 +494,10 @@ public class ConsumeQueue {
                     );
                 }
             }
+            /**
+             * 修改最大偏移量,将数据写入到文件中
+             * @see MappedFile#appendMessage(byte[])
+             */
             this.maxPhysicOffset = offset + size;
             return mappedFile.appendMessage(this.byteBufferIndex.array());
         }

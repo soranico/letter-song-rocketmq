@@ -19,6 +19,11 @@ package org.apache.rocketmq.store;
 import java.util.concurrent.atomic.AtomicLong;
 
 public abstract class ReferenceResource {
+    /**
+     * 对文件的引用,因为删除文件的时候需要文件只被当前
+     * 线程使用,比如读取commitlog到consumequeue的线程
+     * 在读取期间会增加引用,防止文件在读取期间被删除
+     */
     protected final AtomicLong refCount = new AtomicLong(1);
     protected volatile boolean available = true;
     protected volatile boolean cleanupOver = false;

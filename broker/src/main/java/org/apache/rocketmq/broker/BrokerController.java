@@ -90,12 +90,7 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.RemotingServer;
 import org.apache.rocketmq.remoting.common.TlsMode;
-import org.apache.rocketmq.remoting.netty.NettyClientConfig;
-import org.apache.rocketmq.remoting.netty.NettyRemotingServer;
-import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
-import org.apache.rocketmq.remoting.netty.NettyServerConfig;
-import org.apache.rocketmq.remoting.netty.RequestTask;
-import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
+import org.apache.rocketmq.remoting.netty.*;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.srvutil.FileWatchService;
 import org.apache.rocketmq.store.DefaultMessageStore;
@@ -277,7 +272,8 @@ public class BrokerController {
             }
         }
         /**
-         * 加载commitLog的文件
+         * 此时进行所需要的文件的加载
+         * 存放消息的commitlog 消息队列的 consumequeue 索引文件的 index 等
          * @see DefaultMessageStore#load()
          */
         result = result && this.messageStore.load();
@@ -905,10 +901,21 @@ public class BrokerController {
     }
 
     public void start() throws Exception {
+        /**
+         * 启动消息存储服务,主要涉及commitlog consumequeue 等文件
+         * 的更新以及后台刷新消息到磁盘
+         * 以及定时任务的启动
+         * @see DefaultMessageStore#start()
+         */
         if (this.messageStore != null) {
             this.messageStore.start();
         }
 
+        /**
+         * 启动broker的Netty服务
+         * @see NettyRemotingServer#start()
+         * @see NettyRemotingServer#serverHandler
+         */
         if (this.remotingServer != null) {
             this.remotingServer.start();
         }
@@ -916,11 +923,18 @@ public class BrokerController {
         if (this.fastRemotingServer != null) {
             this.fastRemotingServer.start();
         }
-
+        /**
+         * @see FileWatchService#run()
+         */
         if (this.fileWatchService != null) {
             this.fileWatchService.start();
         }
 
+        /**
+         * 通信的客户端,此时只是创建了配置
+         * 并没有执行任何连接
+         * @see BrokerOuterAPI#start()
+         */
         if (this.brokerOuterAPI != null) {
             this.brokerOuterAPI.start();
         }
@@ -943,6 +957,11 @@ public class BrokerController {
             this.registerBrokerAll(true, false, true);
         }
 
+        /**
+         * 默认30s会注册一次broker到NameSrv
+         * 配置范围在10-60之间,超过无效
+         * @see BrokerController#registerBrokerAll(boolean, boolean, boolean) 
+         */
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -985,6 +1004,9 @@ public class BrokerController {
     }
 
     public synchronized void registerBrokerAll(final boolean checkOrderConfig, boolean oneway, boolean forceRegister) {
+        /**
+         * topic信息的封装
+         */
         TopicConfigSerializeWrapper topicConfigWrapper = this.getTopicConfigManager().buildTopicConfigSerializeWrapper();
 
         if (!PermName.isWriteable(this.getBrokerConfig().getBrokerPermission())
@@ -998,7 +1020,10 @@ public class BrokerController {
             }
             topicConfigWrapper.setTopicConfigTable(topicConfigTable);
         }
-
+        /**
+         * 注册broker上的topic等信息到NameSrv
+         * @see BrokerController#doRegisterBrokerAll(boolean, boolean, TopicConfigSerializeWrapper) 
+         */
         if (forceRegister || needRegister(this.brokerConfig.getBrokerClusterName(),
             this.getBrokerAddr(),
             this.brokerConfig.getBrokerName(),
@@ -1010,6 +1035,10 @@ public class BrokerController {
 
     private void doRegisterBrokerAll(boolean checkOrderConfig, boolean oneway,
         TopicConfigSerializeWrapper topicConfigWrapper) {
+        /**
+         * 进行注册获取注册的响应结果,30s同步一次broker上的topic等信息
+         * @see BrokerOuterAPI#registerBrokerAll(String, String, String, long, String, TopicConfigSerializeWrapper, List, boolean, int, boolean)
+         */
         List<RegisterBrokerResult> registerBrokerResultList = this.brokerOuterAPI.registerBrokerAll(
             this.brokerConfig.getBrokerClusterName(),
             this.getBrokerAddr(),
@@ -1022,6 +1051,10 @@ public class BrokerController {
             this.brokerConfig.getRegisterBrokerTimeoutMills(),
             this.brokerConfig.isCompressedRegister());
 
+        /**
+         * 如果有响应结果此时返回的主节点的信息
+         * @see org.apache.rocketmq.namesrv.routeinfo.RouteInfoManager#registerBroker(java.lang.String, java.lang.String, java.lang.String, long, java.lang.String, org.apache.rocketmq.common.protocol.body.TopicConfigSerializeWrapper, java.util.List, io.netty.channel.Channel)
+         */
         if (registerBrokerResultList.size() > 0) {
             RegisterBrokerResult registerBrokerResult = registerBrokerResultList.get(0);
             if (registerBrokerResult != null) {

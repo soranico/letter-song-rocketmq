@@ -199,6 +199,8 @@ public abstract class NettyRemotingAbstract {
          * 找到处理的线程池,没有使用默认的
          * 这个默认的是配置的时候创建的
          * @see org.apache.rocketmq.namesrv.NamesrvController#initialize()
+         *
+         * 对于broker而言,不同的请求类型会存在不同的线程池来处理
          */
         final Pair<NettyRequestProcessor, ExecutorService> matched = this.processorTable.get(cmd.getCode());
         final Pair<NettyRequestProcessor, ExecutorService> pair = null == matched ? this.defaultRequestProcessor : matched;

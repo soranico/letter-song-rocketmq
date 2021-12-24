@@ -101,7 +101,12 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
         /**
          * 当channel建立的时候发布事件
+         *
+         * NameSrv
          * @see org.apache.rocketmq.namesrv.routeinfo.BrokerHousekeepingService
+         *
+         * broker
+         * @see org.apache.rocketmq.broker.client.ClientHousekeepingService
          */
         this.channelEventListener = channelEventListener;
 
@@ -205,6 +210,10 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                 }
             });
 
+        /**
+         * 初始化处理事件的Handler
+         * @see NettyRemotingServer#prepareSharableHandlers()
+         */
         prepareSharableHandlers();
 
         ServerBootstrap childHandler =

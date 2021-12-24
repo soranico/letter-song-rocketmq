@@ -75,6 +75,10 @@ public class BrokerOuterAPI {
     }
 
     public void start() {
+        /**
+         * 启动通信客户端,只是创建好配置
+         * @see NettyRemotingClient#start()
+         */
         this.remotingClient.start();
     }
 
@@ -123,6 +127,9 @@ public class BrokerOuterAPI {
         final boolean compressed) {
 
         final List<RegisterBrokerResult> registerBrokerResultList = new CopyOnWriteArrayList<>();
+        /**
+         * 需要进行连接的NameSrv的地址
+         */
         List<String> nameServerAddressList = this.remotingClient.getNameServerAddressList();
         if (nameServerAddressList != null && nameServerAddressList.size() > 0) {
 
@@ -141,11 +148,18 @@ public class BrokerOuterAPI {
             final int bodyCrc32 = UtilAll.crc32(body);
             requestHeader.setBodyCrc32(bodyCrc32);
             final CountDownLatch countDownLatch = new CountDownLatch(nameServerAddressList.size());
+            /**
+             * 使用CountdownLatch 保证注册完成
+             * @see BrokerOuterAPI#registerBroker(String, boolean, int, RegisterBrokerRequestHeader, byte[])
+             */
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
+                            /**
+                             * 就是Netty发个请求而已
+                             */
                             RegisterBrokerResult result = registerBroker(namesrvAddr, oneway, timeoutMills, requestHeader, body);
                             if (result != null) {
                                 registerBrokerResultList.add(result);

@@ -61,8 +61,9 @@ public class ProducerConcurrent {
 
         producer.start();
         String body = "concurrent-kano-%s";
-        CountDownLatch latch = new CountDownLatch(1);
-        for (int i = 0; i < 1; i++) {
+        int loop = 10000;
+        CountDownLatch latch = new CountDownLatch(loop);
+        for (int i = 0; i < loop; i++) {
             Message message = new Message("concurrent-failed-topic",
                     String.format(body, i).getBytes(RemotingHelper.DEFAULT_CHARSET));
             producer.send(message, new SendCallback() {
@@ -76,7 +77,7 @@ public class ProducerConcurrent {
 
                 @Override
                 public void onException(Throwable e) {
-
+                    e.printStackTrace();
                 }
             });
 

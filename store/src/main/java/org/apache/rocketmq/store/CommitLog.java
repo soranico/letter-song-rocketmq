@@ -44,6 +44,7 @@ import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.FlushDiskType;
 import org.apache.rocketmq.store.ha.HAService;
 import org.apache.rocketmq.store.schedule.ScheduleMessageService;
+import sun.nio.ch.DirectBuffer;
 
 /**
  * Store all metadata downtime for recovery, data protection reliability
@@ -57,6 +58,9 @@ public class CommitLog {
 
     protected final MappedFileQueue mappedFileQueue;
     protected final DefaultMessageStore defaultMessageStore;
+    /**
+     * 文件刷盘服务
+     */
     private final FlushCommitLogService flushCommitLogService;
 
     //If TransientStorePool enabled, we must flush message to FileChannel at fixed periods
@@ -64,6 +68,10 @@ public class CommitLog {
 
     private final AppendMessageCallback appendMessageCallback;
     private final ThreadLocal<MessageExtBatchEncoder> batchEncoderThreadLocal;
+    /**
+     * 主题-队列,队列最大偏移量
+     * @see DefaultMessageStore#recoverTopicQueueTable()
+     */
     protected HashMap<String/* topic-queueid */, Long/* offset */> topicQueueTable = new HashMap<String, Long>(1024);
     protected volatile long confirmOffset = -1L;
 
@@ -123,6 +131,10 @@ public class CommitLog {
     }
 
     public void start() {
+        /**
+         * 文件刷盘服务
+         * @see FlushRealTimeService#run()
+         */
         this.flushCommitLogService.start();
 
         if (defaultMessageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
@@ -174,9 +186,28 @@ public class CommitLog {
 
     public SelectMappedBufferResult getData(final long offset, final boolean returnFirstOnNotFound) {
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMappedFileSizeCommitLog();
+        /**
+         * 找到偏移量所在的文件,因为每个文件的大小固定
+         * 所以可以根据偏移量计算出所在的文件
+         */
         MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset, returnFirstOnNotFound);
         if (mappedFile != null) {
+            /**
+             * 偏移量在文件中的相对位置
+             * e.g file1(1G) file2(1G)
+             * 此时偏移量在 file2 但是相对于 file2的偏移量肯定是
+             * 需要去除file1的大小的
+             */
             int pos = (int) (offset % mappedFileSize);
+            /**
+             * 读取 从 pos 到当前写偏移量之间的数据
+             * 
+             * @see MappedFile#selectMappedBuffer(int)
+             * 
+             * 这一段是内存共享的所以不涉及内存的重新分配
+             * @see java.nio.DirectByteBuffer#DirectByteBuffer(DirectBuffer, int, int, int, int, int) 
+             * @see java.nio.HeapByteBuffer#HeapByteBuffer(byte[], int, int, int, int, int) 
+             */
             SelectMappedBufferResult result = mappedFile.selectMappedBuffer(pos);
             return result;
         }
@@ -268,11 +299,19 @@ public class CommitLog {
     public DispatchRequest checkMessageAndReturnSize(java.nio.ByteBuffer byteBuffer, final boolean checkCRC,
         final boolean readBody) {
         try {
+            /**
+             * 消息的总大小,4字节
+             */
             // 1 TOTAL SIZE
             int totalSize = byteBuffer.getInt();
 
+            
             // 2 MAGIC CODE
             int magicCode = byteBuffer.getInt();
+            /**
+             * 消息的开头,如果魔数是结尾说明消息已经读到末尾
+             * 魔数4字节
+             */
             switch (magicCode) {
                 case MESSAGE_MAGIC_CODE:
                     break;
@@ -287,12 +326,19 @@ public class CommitLog {
 
             int bodyCRC = byteBuffer.getInt();
 
+            /**
+             * 消息所在队列,4字节
+             */
             int queueId = byteBuffer.getInt();
 
             int flag = byteBuffer.getInt();
-
+            /**
+             * 队列中的偏移量
+             */
             long queueOffset = byteBuffer.getLong();
-
+            /**
+             * 消息在commitlog中的偏移量
+             */
             long physicOffset = byteBuffer.getLong();
 
             int sysFlag = byteBuffer.getInt();
@@ -322,6 +368,10 @@ public class CommitLog {
             int bodyLen = byteBuffer.getInt();
             if (bodyLen > 0) {
                 if (readBody) {
+                    /**
+                     * 读取消息体,并进行校验
+                     * 往consumequeue中写的时候不需要读取也不需要校验
+                     */
                     byteBuffer.get(bytesContent, 0, bodyLen);
 
                     if (checkCRC) {
@@ -331,19 +381,30 @@ public class CommitLog {
                             return new DispatchRequest(-1, false/* success */);
                         }
                     }
-                } else {
+                }
+                /**
+                 * 跳过消息体
+                 */
+                else {
                     byteBuffer.position(byteBuffer.position() + bodyLen);
                 }
             }
 
             byte topicLen = byteBuffer.get();
             byteBuffer.get(bytesContent, 0, topicLen);
+            /**
+             * 读取topic
+             */
             String topic = new String(bytesContent, 0, topicLen, MessageDecoder.CHARSET_UTF8);
 
             long tagsCode = 0;
             String keys = "";
             String uniqKey = null;
 
+            /**
+             * 额外的配置参数最多只能 2字节
+             * 读取配置参数
+             */
             short propertiesLength = byteBuffer.getShort();
             Map<String, String> propertiesMap = null;
             if (propertiesLength > 0) {
@@ -355,6 +416,9 @@ public class CommitLog {
 
                 uniqKey = propertiesMap.get(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX);
 
+                /**
+                 * 消息的tag
+                 */
                 String tags = propertiesMap.get(MessageConst.PROPERTY_TAGS);
                 if (tags != null && tags.length() > 0) {
                     tagsCode = MessageExtBrokerInner.tagsString2tagsCode(MessageExt.parseTopicFilterType(sysFlag), tags);
@@ -362,6 +426,9 @@ public class CommitLog {
 
                 // Timing message processing
                 {
+                    /**
+                     * TODO 消息的延迟级别
+                     */
                     String t = propertiesMap.get(MessageConst.PROPERTY_DELAY_TIME_LEVEL);
                     if (TopicValidator.RMQ_SYS_SCHEDULE_TOPIC.equals(topic) && t != null) {
                         int delayLevel = Integer.parseInt(t);
@@ -1319,7 +1386,9 @@ public class CommitLog {
 
             while (!this.isStopped()) {
                 boolean flushCommitLogTimed = CommitLog.this.defaultMessageStore.getMessageStoreConfig().isFlushCommitLogTimed();
-
+                /**
+                 * 刷盘间隔默认500ms
+                 */
                 int interval = CommitLog.this.defaultMessageStore.getMessageStoreConfig().getFlushIntervalCommitLog();
                 int flushPhysicQueueLeastPages = CommitLog.this.defaultMessageStore.getMessageStoreConfig().getFlushCommitLogLeastPages();
 

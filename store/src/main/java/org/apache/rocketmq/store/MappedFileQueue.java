@@ -35,7 +35,8 @@ public class MappedFileQueue {
 
     private static final int DELETE_FILES_BATCH_MAX = 10;
     /**
-     * commitLog的存储路径
+     * commitlog的存储路径
+     * consumequeue的存放路径
      */
     private final String storePath;
 
