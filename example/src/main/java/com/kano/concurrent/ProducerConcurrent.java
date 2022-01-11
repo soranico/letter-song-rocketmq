@@ -61,7 +61,7 @@ public class ProducerConcurrent {
 
         producer.start();
         String body = "concurrent-kano-%s";
-        int loop = 10000;
+        int loop = 1;
         CountDownLatch latch = new CountDownLatch(loop);
         for (int i = 0; i < loop; i++) {
             Message message = new Message("concurrent-failed-topic",

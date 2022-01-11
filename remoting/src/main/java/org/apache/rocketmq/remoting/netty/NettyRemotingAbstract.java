@@ -240,6 +240,9 @@ public abstract class NettyRemotingAbstract {
                             /**
                              * 调用具体的processor处理请求,内部调用的也是同步方法去执行
                              * @see org.apache.rocketmq.namesrv.processor.DefaultRequestProcessor#asyncProcessRequest(ChannelHandlerContext, RemotingCommand, RemotingResponseCallback)
+                             *
+                             * 接受消息
+                             * @see org.apache.rocketmq.broker.processor.SendMessageProcessor#asyncProcessRequest(io.netty.channel.ChannelHandlerContext, org.apache.rocketmq.remoting.protocol.RemotingCommand, org.apache.rocketmq.remoting.netty.RemotingResponseCallback)
                              */
                             processor.asyncProcessRequest(ctx, cmd, callback);
                         }

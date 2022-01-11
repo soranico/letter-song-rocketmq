@@ -74,11 +74,21 @@ public class HAService {
     }
 
     public void putRequest(final CommitLog.GroupCommitRequest request) {
+        /**
+         * @see GroupTransferService#putRequest(CommitLog.GroupCommitRequest)
+         */
         this.groupTransferService.putRequest(request);
     }
 
     public boolean isSlaveOK(final long masterPutWhere) {
         boolean result = this.connectionCount.get() > 0;
+        /**
+         * 主从节点的进度小于指定偏移量那么从节点就是可用的
+         * 因为如果从节点落后于主节点过多说明从节点当前写入速度过慢
+         * 继续写入数据也无法及时处理
+         *
+         * 1024 * 1024 * 256
+         */
         result =
             result
                 && ((masterPutWhere - this.push2SlaveMaxOffset.get()) < this.defaultMessageStore
@@ -261,6 +271,9 @@ public class HAService {
             synchronized (this.requestsWrite) {
                 this.requestsWrite.add(request);
             }
+            /**
+             * 唤醒同步线程,主节点的消息同步到从节点
+             */
             this.wakeup();
         }
 
@@ -304,6 +317,10 @@ public class HAService {
             while (!this.isStopped()) {
                 try {
                     this.waitForRunning(10);
+                    /**
+                     * 等待传输数据
+                     * @see GroupTransferService#doWaitTransfer()
+                     */
                     this.doWaitTransfer();
                 } catch (Exception e) {
                     log.warn(this.getServiceName() + " service has exception. ", e);

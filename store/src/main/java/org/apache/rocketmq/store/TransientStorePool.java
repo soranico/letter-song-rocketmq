@@ -49,7 +49,9 @@ public class TransientStorePool {
     public void init() {
         for (int i = 0; i < poolSize; i++) {
             ByteBuffer byteBuffer = ByteBuffer.allocateDirect(fileSize);
-
+            /**
+             * 申请直接内存并且锁定这块内存防止页面置换
+             */
             final long address = ((DirectBuffer) byteBuffer).address();
             Pointer pointer = new Pointer(address);
             LibC.INSTANCE.mlock(pointer, new NativeLong(fileSize));
