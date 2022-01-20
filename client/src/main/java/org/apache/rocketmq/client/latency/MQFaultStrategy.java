@@ -56,8 +56,17 @@ public class MQFaultStrategy {
     }
 
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName) {
+        /**
+         * 发送规避策略启用
+         */
         if (this.sendLatencyFaultEnable) {
             try {
+                /**
+                 * 轮询选择一个队列,如果这个队列所在的 broker是可用的(规避)
+                 * 那么就直接返回
+                 *
+                 * 如果规避完都不可用那么选择一个不是最佳的
+                 */
                 int index = tpInfo.getSendWhichQueue().incrementAndGet();
                 for (int i = 0; i < tpInfo.getMessageQueueList().size(); i++) {
                     int pos = Math.abs(index++) % tpInfo.getMessageQueueList().size();
@@ -67,8 +76,15 @@ public class MQFaultStrategy {
                     if (latencyFaultTolerance.isAvailable(mq.getBrokerName()))
                         return mq;
                 }
-
+                /**
+                 * 所有的broker都规避了,此时也要选择一个
+                 * @see LatencyFaultToleranceImpl#pickOneAtLeast()
+                 */
                 final String notBestBroker = latencyFaultTolerance.pickOneAtLeast();
+                /**
+                 * 找出这个broker上的队列数量
+                 * 从这个broker上选择一个队列进行消息的发送
+                 */
                 int writeQueueNums = tpInfo.getQueueIdByBroker(notBestBroker);
                 if (writeQueueNums > 0) {
                     final MessageQueue mq = tpInfo.selectOneMessageQueue();

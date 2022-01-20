@@ -585,6 +585,8 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         long endTimestamp = beginTimestampFirst;
         /**
          * 获取topic的信息
+         * 其中包含了这个topic下的队列信息,发送消息的时候会根据不同策略选择一个队列进行发送
+         *
          */
         TopicPublishInfo topicPublishInfo = this.tryToFindTopicPublishInfo(msg.getTopic());
         if (topicPublishInfo != null && topicPublishInfo.ok()) {
@@ -600,7 +602,8 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             String[] brokersSent = new String[timesTotal];
             for (; times < timesTotal; times++) {
                 /**
-                 * 使用的broker名字
+                 * 上次发送的broker的名字
+                 * 这个主要用于发送失败规避策略
                  */
                 String lastBrokerName = null == mq ? null : mq.getBrokerName();
                 /**

@@ -64,6 +64,7 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
 
     @Override
     public String pickOneAtLeast() {
+        // 值的迭代器
         final Enumeration<FaultItem> elements = this.faultItemTable.elements();
         List<FaultItem> tmpList = new LinkedList<FaultItem>();
         while (elements.hasMoreElements()) {
@@ -77,9 +78,16 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
             Collections.sort(tmpList);
 
             final int half = tmpList.size() / 2;
+            /**
+             * 如果小于等于2个那么直接取第一个就行
+             */
             if (half <= 0) {
                 return tmpList.get(0).getName();
-            } else {
+            }
+            /**
+             * 求余拿出一个
+             */
+            else {
                 final int i = this.whichItemWorst.incrementAndGet() % half;
                 return tmpList.get(i).getName();
             }
