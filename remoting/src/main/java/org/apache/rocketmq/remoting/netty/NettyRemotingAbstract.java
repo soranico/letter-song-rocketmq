@@ -233,7 +233,7 @@ public abstract class NettyRemotingAbstract {
                             }
                         };
                         /**
-                         * 默认的
+                         * 默认的是异步的处理
                          */
                         if (pair.getObject1() instanceof AsyncNettyRequestProcessor) {
                             AsyncNettyRequestProcessor processor = (AsyncNettyRequestProcessor)pair.getObject1();
@@ -241,7 +241,12 @@ public abstract class NettyRemotingAbstract {
                              * 调用具体的processor处理请求,内部调用的也是同步方法去执行
                              * @see org.apache.rocketmq.namesrv.processor.DefaultRequestProcessor#asyncProcessRequest(ChannelHandlerContext, RemotingCommand, RemotingResponseCallback)
                              *
-                             * 接受消息
+                             * 处理生产者提交的消息
+                             *
+                             * 这个processor 是在 启动broker的时候注册的
+                             * @see org.apache.rocketmq.broker.BrokerController#registerProcessor()
+                             *
+                             * 调用processor执行处理的逻辑
                              * @see org.apache.rocketmq.broker.processor.SendMessageProcessor#asyncProcessRequest(io.netty.channel.ChannelHandlerContext, org.apache.rocketmq.remoting.protocol.RemotingCommand, org.apache.rocketmq.remoting.netty.RemotingResponseCallback)
                              */
                             processor.asyncProcessRequest(ctx, cmd, callback);

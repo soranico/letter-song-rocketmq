@@ -91,6 +91,8 @@ public class CommitLog {
         this.defaultMessageStore = defaultMessageStore;
         /**
          * TODO 同步刷盘
+         * 默认 10ms 刷一次磁盘
+         * @see GroupCommitService#doCommit()
          */
         if (FlushDiskType.SYNC_FLUSH == defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
             this.flushCommitLogService = new GroupCommitService();
@@ -713,7 +715,7 @@ public class CommitLog {
                 return CompletableFuture.completedFuture(new PutMessageResult(PutMessageStatus.CREATE_MAPEDFILE_FAILED, null));
             }
             /**
-             * 插入数据到文件
+             * 插入数据到文件,此时只是存到内存中并没有进行刷盘
              * @see MappedFile#appendMessagesInner(org.apache.rocketmq.common.message.MessageExt, org.apache.rocketmq.store.AppendMessageCallback)
              */
             result = mappedFile.appendMessage(msg, this.appendMessageCallback);
@@ -754,6 +756,9 @@ public class CommitLog {
             log.warn("[NOTIFYME]putMessage in lock cost time(ms)={}, bodyLength={} AppendMessageResult={}", elapsedTimeInLock, msg.getBody().length, result);
         }
 
+        /**
+         * TODO 没有写成功
+         */
         if (null != unlockMappedFile && this.defaultMessageStore.getMessageStoreConfig().isWarmMapedFileEnable()) {
             this.defaultMessageStore.unlockMappedFile(unlockMappedFile);
         }
@@ -766,18 +771,30 @@ public class CommitLog {
         /**
          * 提交刷盘请求,同步或者异步
          * @see CommitLog#submitFlushRequest(AppendMessageResult, MessageExt)
+         *
+         * 不论同步还是异步都是唤醒 刷盘线程 进行刷盘
+         * 只是同步刷盘 会手动提交一个刷盘请求,同时返回一个 Future
+         *
+         * @see GroupCommitService#doCommit()  同步
          */
         CompletableFuture<PutMessageStatus> flushResultFuture = submitFlushRequest(result, msg);
         /**
-         * 主从消息复制
+         * TODO 主从消息复制
          */
         CompletableFuture<PutMessageStatus> replicaResultFuture = submitReplicaRequest(result, msg);
+        /**
+         * 等待刷盘 和 主从同步 线程响应结果后执行
+         */
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {
+
+            /**
+             * 刷盘失败,设置刷盘状态
+             */
             if (flushStatus != PutMessageStatus.PUT_OK) {
                 putMessageResult.setPutMessageStatus(flushStatus);
             }
             /**
-             * 主从同步的状态
+             * 主从同步的状态失败,设置状态
              */
             if (replicaStatus != PutMessageStatus.PUT_OK) {
                 putMessageResult.setPutMessageStatus(replicaStatus);
@@ -786,6 +803,9 @@ public class CommitLog {
                             msg.getTopic(), msg.getTags(), msg.getBornHostNameString());
                 }
             }
+            /**
+             * 只有刷盘和同步都成功,状态才是成功的
+             */
             return putMessageResult;
         });
     }
@@ -1028,6 +1048,7 @@ public class CommitLog {
             final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
             /**
              * 消息需要等待刷盘完成,那么提交任务获取任务状态的Future
+             * @see GroupCommitService#putRequest(GroupCommitRequest)
              */
             if (messageExt.isWaitStoreMsgOK()) {
                 GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes(),
@@ -1045,7 +1066,8 @@ public class CommitLog {
         }
         // Asynchronous flush
         /**
-         * 唤醒刷盘任务
+         * 异步刷盘,唤醒刷盘任务即可
+         * @see FlushRealTimeService#wakeup()
          */
         else {
             if (!this.defaultMessageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
@@ -1546,6 +1568,9 @@ public class CommitLog {
         private volatile List<GroupCommitRequest> requestsWrite = new ArrayList<GroupCommitRequest>();
         private volatile List<GroupCommitRequest> requestsRead = new ArrayList<GroupCommitRequest>();
 
+        /**
+         * 提交刷盘请求
+         */
         public synchronized void putRequest(final GroupCommitRequest request) {
             synchronized (this.requestsWrite) {
                 this.requestsWrite.add(request);
@@ -1565,12 +1590,24 @@ public class CommitLog {
                     for (GroupCommitRequest req : this.requestsRead) {
                         // There may be a message in the next file, so a maximum of
                         // two times the flush
+                        /**
+                         * 如果已经写出的偏移量 > 等待刷盘的偏移量
+                         * 说明已经刷盘了就无需再次刷盘
+                         */
                         boolean flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
                         for (int i = 0; i < 2 && !flushOK; i++) {
+                            /**
+                             * 进行刷盘
+                             * @see MappedFileQueue#flush(int)
+                             */
                             CommitLog.this.mappedFileQueue.flush(0);
                             flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
                         }
-
+                        /**
+                         * 唤醒等待刷盘的线程,如果是同步刷盘的话,此时生产者提交线程
+                         * 阻塞等待刷盘结果
+                         * @see CommitLog#submitFlushRequest(org.apache.rocketmq.store.AppendMessageResult, org.apache.rocketmq.common.message.MessageExt)
+                         */
                         req.wakeupCustomer(flushOK ? PutMessageStatus.PUT_OK : PutMessageStatus.FLUSH_DISK_TIMEOUT);
                     }
 
@@ -1591,9 +1628,16 @@ public class CommitLog {
         public void run() {
             CommitLog.log.info(this.getServiceName() + " service started");
 
+            /**
+             * 刷盘线程没有停止
+             */
             while (!this.isStopped()) {
                 try {
+                    /**
+                     * 等待10ms再次运行刷盘操作
+                     */
                     this.waitForRunning(10);
+
                     this.doCommit();
                 } catch (Exception e) {
                     CommitLog.log.warn(this.getServiceName() + " service has exception. ", e);

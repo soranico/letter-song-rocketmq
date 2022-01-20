@@ -525,7 +525,14 @@ public class DefaultMessageStore implements MessageStore {
 
         long beginTime = this.getSystemClock().now();
         /**
-         * 存放消息
+         * 先写到内存中,然后调用刷盘线程进行刷盘
+         * 同步刷盘并且需要等待刷盘结果的会阻塞等待刷盘完成
+         *
+         * 同步刷盘默认 10ms 异步刷盘默认 500ms
+         *
+         * 如果需要进行消息同步的话,此时会进行消息的同步
+         *
+         * 只有刷盘成功和消息同步成功才是 存放成功
          * @see CommitLog#asyncPutMessage(MessageExtBrokerInner) 
          */
         CompletableFuture<PutMessageResult> putResultFuture = this.commitLog.asyncPutMessage(msg);
