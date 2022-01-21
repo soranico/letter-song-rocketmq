@@ -378,6 +378,11 @@ public class ConsumeQueue {
         return this.minLogicOffset / CQ_STORE_UNIT_SIZE;
     }
 
+    /**
+     * 存放消息的偏移量等信息到队列中
+     * 写入到队列中的数据可以被消费者消费
+     * @param request
+     */
     public void putMessagePositionInfoWrapper(DispatchRequest request) {
         final int maxRetries = 30;
         boolean canWrite = this.defaultMessageStore.getRunningFlags().isCQWriteable();
@@ -404,7 +409,7 @@ public class ConsumeQueue {
                 }
             }
             /**
-             * 通过 mmp 将数据写到 consumequeue文件中
+             * 通过 mmp 将数据写到 consumequeue文件的 内存映射中
              * @see ConsumeQueue#putMessagePositionInfo(long, int, long, long) 
              */
             boolean result = this.putMessagePositionInfo(request.getCommitLogOffset(),
@@ -452,6 +457,8 @@ public class ConsumeQueue {
         this.byteBufferIndex.putLong(tagsCode);
         /**
          * 队列的偏移量 * 20
+         * 因为写入队列中的每个消息的大小都是 20字节
+         * 因此只要知道消息在队列中的位置,就可以计算出消息在文件中的偏移量
          */
         final long expectLogicOffset = cqOffset * CQ_STORE_UNIT_SIZE;
 
@@ -462,6 +469,10 @@ public class ConsumeQueue {
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(expectLogicOffset);
         if (mappedFile != null) {
 
+            /**
+             * 如果是首次创建的文件
+             * TODO 首先填充满?
+             */
             if (mappedFile.isFirstCreateInQueue() && cqOffset != 0 && mappedFile.getWrotePosition() == 0) {
                 this.minLogicOffset = expectLogicOffset;
                 this.mappedFileQueue.setFlushedWhere(expectLogicOffset);
@@ -473,10 +484,13 @@ public class ConsumeQueue {
 
             if (cqOffset != 0) {
                 /**
-                 * 当前文件的偏移量
+                 * 当前的偏移量,已经写出的 + 文件起始的偏移量
                  */
                 long currentLogicOffset = mappedFile.getWrotePosition() + mappedFile.getFileFromOffset();
 
+                /**
+                 * 说明已经写出了,没有必要再次写出
+                 */
                 if (expectLogicOffset < currentLogicOffset) {
                     log.warn("Build  consume queue repeatedly, expectLogicOffset: {} currentLogicOffset: {} Topic: {} QID: {} Diff: {}",
                         expectLogicOffset, currentLogicOffset, this.topic, this.queueId, expectLogicOffset - currentLogicOffset);
@@ -495,10 +509,13 @@ public class ConsumeQueue {
                 }
             }
             /**
-             * 修改最大偏移量,将数据写入到文件中
+             * 修改最大偏移量,将数据写入到 mmp 映射内存中
              * @see MappedFile#appendMessage(byte[])
              */
             this.maxPhysicOffset = offset + size;
+            /**
+             * TODO 写入内存,没有刷盘 刷盘
+             */
             return mappedFile.appendMessage(this.byteBufferIndex.array());
         }
         return false;

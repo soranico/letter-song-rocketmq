@@ -264,6 +264,10 @@ public class MappedFile extends ReferenceResource {
         return this.fileFromOffset;
     }
 
+    /**
+     * 只是写出到内存中并没有刷出到磁盘里
+     *
+     */
     public boolean appendMessage(final byte[] data) {
         int currentPos = this.wrotePosition.get();
         /**

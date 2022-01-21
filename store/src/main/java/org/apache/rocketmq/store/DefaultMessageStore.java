@@ -1631,9 +1631,11 @@ public class DefaultMessageStore implements MessageStore {
          *
          * @see org.apache.rocketmq.broker.filter.CommitLogDispatcherCalcBitMap#dispatch(org.apache.rocketmq.store.DispatchRequest)
          *
+         * 构建消息的index文件
          * @see CommitLogDispatcherBuildIndex#dispatch(org.apache.rocketmq.store.DispatchRequest)
          *
-         * 存储消息的信息到consumequeue
+         * 存储消息的信息到consumequeue,此时只是写入到 mmp的内存映射中
+         * 没有进行刷盘操作
          * @see CommitLogDispatcherBuildConsumeQueue#dispatch(DispatchRequest)
          *
          */
@@ -1644,6 +1646,8 @@ public class DefaultMessageStore implements MessageStore {
 
     public void putMessagePositionInfo(DispatchRequest dispatchRequest) {
         /**
+         * 从topic中取出消息写到的队列
+         *
          * 本质就是从Map中获取队列信息,如果没有对应的信息就先构建
          * @see DefaultMessageStore#consumeQueueTable
          * @see DefaultMessageStore#findConsumeQueue(String, int) 
@@ -1711,6 +1715,11 @@ public class DefaultMessageStore implements MessageStore {
         public void dispatch(DispatchRequest request) {
             final int tranType = MessageSysFlag.getTransactionValue(request.getSysFlag());
             switch (tranType) {
+                /**
+                 * 非事务消息或者事务提交的消息
+                 * 那么需要构建的consume queue
+                 * 因为已经提交的消息可以被消费者读取消费了
+                 */
                 case MessageSysFlag.TRANSACTION_NOT_TYPE:
                 case MessageSysFlag.TRANSACTION_COMMIT_TYPE:
                     /**
@@ -1719,6 +1728,12 @@ public class DefaultMessageStore implements MessageStore {
                      */
                     DefaultMessageStore.this.putMessagePositionInfo(request);
                     break;
+                /**
+                 * 对于事务预处理和回滚的消息
+                 * 此时不能写到 consume queue
+                 * 此时还不能确定半事务的状态 或 事务不能提交
+                 * 如果写到队列中会导致 事务消息被错误的消费
+                 */
                 case MessageSysFlag.TRANSACTION_PREPARED_TYPE:
                 case MessageSysFlag.TRANSACTION_ROLLBACK_TYPE:
                     break;
@@ -2072,6 +2087,9 @@ public class DefaultMessageStore implements MessageStore {
      */
     class ReputMessageService extends ServiceThread {
 
+        /**
+         * 从哪个偏移量开始构建 consume queue 的数据
+         */
         private volatile long reputFromOffset = 0;
 
         public long getReputFromOffset() {
@@ -2109,7 +2127,7 @@ public class DefaultMessageStore implements MessageStore {
 
         private void doReput() {
             /**
-             * TODO ?
+             * TODO 这种情况说明构建队列已经 远远慢于 消息的写入
              */
             if (this.reputFromOffset < DefaultMessageStore.this.commitLog.getMinOffset()) {
                 log.warn("The reputFromOffset={} is smaller than minPyOffset={}, this usually indicate that the dispatch behind too much and the commitlog has expired.",
@@ -2131,11 +2149,17 @@ public class DefaultMessageStore implements MessageStore {
                  * 这里不涉及到内存拷贝,因为ByteBuffer 的slice()
                  * 会共享 pos - limit之间的内存
                  * @see CommitLog#getData(long, boolean)
+                 *
+                 * 此时需要持有读取的commitlog的引用,避免后台删除文件线程超时删除
                  */
                 SelectMappedBufferResult result = DefaultMessageStore.this.commitLog.getData(reputFromOffset);
                 if (result != null) {
                     try {
+                        /**
+                         * 更新当前的构建队列偏移量
+                         */
                         this.reputFromOffset = result.getStartOffset();
+
                         /**
                          * 将commitlog没有写到consumequeue之间的数据
                          * 写入到对应的队列文件
@@ -2155,13 +2179,13 @@ public class DefaultMessageStore implements MessageStore {
                                  */
                                 if (size > 0) {
                                     /**
-                                     * 先写文件,然后再更新偏移量
                                      * @see DefaultMessageStore#doDispatch(DispatchRequest)
                                      */
                                     DefaultMessageStore.this.doDispatch(dispatchRequest);
+
                                     /**
                                      * 不是从节点消息写入队列后通知消息已经到达,这个是推模式,需要主动通知消费者消息已经到达
-                                     * TODO 推
+                                     * TODO 推模式?
                                      * @see org.apache.rocketmq.broker.longpolling.NotifyMessageArrivingListener#arriving(java.lang.String, int, long, long, long, byte[], java.util.Map)
                                      */
                                     if (BrokerRole.SLAVE != DefaultMessageStore.this.getMessageStoreConfig().getBrokerRole()
@@ -2172,6 +2196,8 @@ public class DefaultMessageStore implements MessageStore {
                                             dispatchRequest.getTagsCode(), dispatchRequest.getStoreTimestamp(),
                                             dispatchRequest.getBitMap(), dispatchRequest.getPropertiesMap());
                                     }
+
+
                                     /**
                                      * 更新已经存到queue的偏移量
                                      */
@@ -2188,7 +2214,13 @@ public class DefaultMessageStore implements MessageStore {
                                             .getSinglePutMessageTopicSizeTotal(dispatchRequest.getTopic())
                                             .addAndGet(dispatchRequest.getMsgSize());
                                     }
-                                } else if (size == 0) {
+
+                                }
+                                /**
+                                 * 当前commitlog文件没有可以读取的消息
+                                 * 开始读取下一个文件并构建到队列
+                                 */
+                                else if (size == 0) {
                                     this.reputFromOffset = DefaultMessageStore.this.commitLog.rollNextFile(this.reputFromOffset);
                                     readSize = result.getSize();
                                 }
